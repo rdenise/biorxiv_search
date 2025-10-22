@@ -27,7 +27,13 @@ python -m pip install requests polars rich rich-click
 You can install the dependencies with conda/mamba:
 
 ```bash
-mamba install -c conda-forge python=3.14 requests polars rich-click
+mamba create -n biorxiv -c conda-forge python=3.14 requests polars rich-click
+```
+
+the name of the environment here was set to `biorxiv` and to activate the environment:
+
+```bash
+mamba activate biorxiv
 ```
 
 (or from a virtualenv / conda environment of your choice)
