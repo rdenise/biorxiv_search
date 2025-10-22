@@ -17,6 +17,7 @@ venv/
 # Output
 out/
 *.csv
+test*
 
 # Editor
 .vscode/
