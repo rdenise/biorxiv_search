@@ -55,10 +55,9 @@ Options:
 - `--end`: end date (YYYY-MM-DD), default = today.
 - `--target`: target affiliation to match exactly (case-insensitive), default `Institut pasteur`.
 - `--pause`: pause between paginated requests in seconds (default 0.2).
-- `--prefix`: optional prefix for output filenames (default: server name).
 - `--outdir`: directory to write CSV output files (default: current working directory).
 
-Output files are named `<prefix>_<target>_exact.csv` (spaces in the target are replaced with underscores). When `--server both` is used, an additional combined CSV is written and namesd `both_<target>_exact.csv`.
+Output files are named `<server>_<target>_exact.csv` (spaces in the target are replaced with underscores). When `--server both` is used, an additional combined CSV is written and namesd `both_<target>_exact.csv`.
 
 ## Error handling
 
