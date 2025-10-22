@@ -55,7 +55,7 @@ def fetch_exact_affil(
     console = Console()
 
     # retry settings for transient request failures
-    max_retries = 10
+    max_retries = 50
     backoff_base = 1.0  # seconds, exponential backoff multiplier
 
     while True:
@@ -75,7 +75,7 @@ def fetch_exact_affil(
             except requests.exceptions.HTTPError as e:
                 resp = getattr(e, "response", None)
                 if resp is not None and resp.status_code == 421:
-                    wait = backoff_base * (2 ** attempt)
+                    wait = backoff_base * 2
                     console.print(
                         f"[yellow]Received 421 Misdirected Request for {url}. "
                         f"Retrying in {wait:.1f}s (attempt {attempt+1}/{max_retries})[/]"
@@ -86,7 +86,7 @@ def fetch_exact_affil(
                 raise
             except requests.exceptions.RequestException as e:
                 # connection/timeout/etc. -> retry
-                wait = backoff_base * (2 ** attempt)
+                wait = backoff_base * 2
                 console.print(
                     f"[yellow]Request failed ({e}). Retrying in {wait:.1f}s "
                     f"(attempt {attempt+1}/{max_retries})[/]"
