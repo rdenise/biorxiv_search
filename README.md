@@ -58,6 +58,11 @@ The tool provides two main commands:
 
 Search for records with matching corresponding author affiliation and write CSV output.
 
+**If you install the environment as shown above, remember to activate it first.**
+```bash
+mamba activate biorxiv
+```
+
 **Basic usage:**
 
 ```bash
@@ -126,6 +131,11 @@ The tool automatically detects existing batch files and continues from the last 
 ### Command: `fetch`
 
 Fetch all records (no affiliation filtering) and write Parquet output files.
+
+**If you install the environment as shown above, remember to activate it first.**
+```bash
+mamba activate biorxiv
+```
 
 **Basic usage:**
 
