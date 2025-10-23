@@ -176,6 +176,7 @@ The `fetch` command also supports resume via temporary batch files stored in `{o
   - Transient network errors (timeouts, connection resets)
   - HTTP 421 (Misdirected Request)
   - HTTP 500 (Internal Server Error)
+  - HTTP 503 (Service Unavailable)
 - **Configurable retry limit**: Use `--max-retries` to control the maximum number of retry attempts per page (default: 50).
 - **Resume from failures**: If a search is interrupted, use `--temp-outdir` to resume from the last successfully fetched page.
 - **Missing pages detection**: The tool automatically detects and fetches any missing pages when resuming.
