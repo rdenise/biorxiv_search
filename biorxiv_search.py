@@ -173,7 +173,7 @@ def search(server: str, start_date: str, end_date: Optional[str], target_affil: 
         console.print(f"Wrote [bold]{len(df)}[/] records to [cyan]{out_path}[/]\n")
         dfs.append(df)
 
-    if len(dfs) > 1:
+    if len(dfs) > 1 and server == "both" and dfs[0].shape[0] > 0 and dfs[1].shape[0] > 0:
         combined = pl.concat(dfs)
         
         # Build combined filename with date range
@@ -188,6 +188,8 @@ def search(server: str, start_date: str, end_date: Optional[str], target_affil: 
         combined_path = Path(outdir) / combined_name
         combined.write_csv(combined_path)
         console.print(f"Wrote combined [bold]{len(combined)}[/] records to [cyan]{combined_path}[/]")
+    elif dfs[0].shape[0] > 0 or dfs[1].shape[0] > 0:
+        console.print("[yellow]Note: Only one server returned results; no combined file created.[/]")
 
     # remove the temp dir if it was created by us
     all_download = False
@@ -243,7 +245,7 @@ def fetch_parquet(server: str, start: str, end: Optional[str], outdir: Path, cpu
         console.print(f"Querying [bold]{server}[/] from {start} to {end or 'today'}...", style="green")
 
     dfs = fetch_module.fetch_servers(servers, start, end, 0.2, cpu, tempdir)
-    fetch_module.write_parquet_tables(dfs, Path(outdir), prefix=None)
+    fetch_module.write_parquet_tables(dfs, Path(outdir), prefix=None, created_temp=True, temp_outdir=tempdir)
 
     # remove the temp dir if it was created by us
     all_download = False

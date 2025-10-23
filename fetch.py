@@ -59,7 +59,7 @@ def fetch_servers(
             temp_outdir=temp_outdir,
             concurrency=concurrency,
         )
-        console.print(f"Finished fetch for {s}, got {len(df)} records")
+        console.print(f"Finished fetch for {s}, got {len(df)} records\n")
         results.append(df)
 
     return results
@@ -106,11 +106,9 @@ def fetch_all_records(
     wait = 2.0
 
     # create temp dir if not provided
-    created_temp = False
     if temp_outdir is None:
         tmp = tempfile.mkdtemp(prefix=f"{server}_batches_")
         temp_outdir = Path(tmp)
-        created_temp = True
     else:
         temp_outdir = Path(temp_outdir)
         temp_outdir.mkdir(parents=True, exist_ok=True)
@@ -283,13 +281,8 @@ def fetch_all_records(
 
     # After fetching all batches, concatenate temporary files and deduplicate by DOI
     files = sorted(temp_outdir.glob(f"{server}_{start_date}_*.parquet"))
+    
     if not files:
-        # cleanup only if we created the temp dir
-        if created_temp:
-            try:
-                shutil.rmtree(temp_outdir)
-            except OSError:
-                pass
         # return empty DataFrame
         return pl.DataFrame([])
 
@@ -309,19 +302,15 @@ def fetch_all_records(
         combined = combined.sort(["doi", "version"], descending=[False, True])
         combined = combined.unique(subset=["doi"], keep="first")
 
-    # cleanup temporary dir if we created it
-    if created_temp:
-        try:
-            shutil.rmtree(temp_outdir)
-        except OSError:
-            console.print(f"[yellow]Warning: failed to remove temp dir {temp_outdir}[/]")
-
     return combined
 
 
-def write_parquet_tables(dataframes: List[pl.DataFrame], outdir: Path, prefix: Optional[str] = None):
+def write_parquet_tables(dataframes: List[pl.DataFrame], outdir: Path, created_temp: bool, temp_outdir: Optional[Path] = None, prefix: Optional[str] = None):
     """Write per-server parquet files (and a combined parquet) while dropping `abstract` column if present."""
     outdir.mkdir(parents=True, exist_ok=True)
+
+    dataframes = [df for df in dataframes if df.height > 0]
+
     for df in dataframes:
         # try to derive server name from the `source_server` column if present
         server = None
@@ -336,10 +325,19 @@ def write_parquet_tables(dataframes: List[pl.DataFrame], outdir: Path, prefix: O
         console.print(f"Wrote {len(df)} rows to {out_path}")
 
     # combined
-    if dataframes:
+    if len(dataframes) > 1:
         combined = pl.concat(dataframes)
         if "abstract" in combined.columns:
             combined = combined.drop("abstract")
         combined_path = outdir / f"{prefix or 'combined'}.parquet"
         combined.write_parquet(combined_path)
         console.print(f"Wrote combined {len(combined)} rows to {combined_path}")
+    else:
+        console.print("[yellow]Note: Only one server returned results; no combined file created.[/]")
+
+    # cleanup temporary dir if we created it
+    if created_temp:
+        try:
+            shutil.rmtree(temp_outdir)
+        except OSError:
+            console.print(f"[yellow]Warning: failed to remove temp dir {temp_outdir}[/]")
