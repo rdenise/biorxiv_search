@@ -37,7 +37,7 @@ You can install the dependencies with conda/mamba:
 mamba create -n biorxiv -c conda-forge python=3.14 requests polars rich-click
 ```
 
-the name of the environment here was set to `biorxiv` and to activate the environment:
+The name of the environment here was set to `biorxiv`, so if you want to use it, you need to activate the environment:
 
 ```bash
 mamba activate biorxiv
