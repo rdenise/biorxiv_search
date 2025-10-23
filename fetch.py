@@ -23,6 +23,9 @@ from collections import deque
 import requests
 import polars as pl
 from rich.console import Console
+from rich.progress import Progress, SpinnerColumn, TextColumn, TaskProgressColumn
+from rich.panel import Panel
+from rich.table import Table
 
 console = Console()
 
@@ -80,6 +83,21 @@ def fetch_all_records(
         from datetime import date
 
         end_date = str(date.today())
+
+    # Print summary box with run configuration
+    table = Table(show_header=False, box=None, padding=(0, 1))
+    table.add_column("Parameter", style="cyan", no_wrap=True)
+    table.add_column("Value", style="yellow")
+    
+    table.add_row("Server", server)
+    table.add_row("Start Date", start_date)
+    table.add_row("End Date", end_date)
+    table.add_row("Concurrency", str(concurrency))
+    table.add_row("Max Retries", str(max_retries))
+    table.add_row("Pause (seconds)", str(pause_s))
+    table.add_row("Temp Directory", str(temp_outdir) if temp_outdir else "Auto (temporary)")
+    
+    console.print(Panel(table, title="[bold blue]Fetch Configuration[/bold blue]", border_style="blue"))
 
     base = f"https://api.biorxiv.org/details/{server}"
     cursor = 0
@@ -139,6 +157,7 @@ def fetch_all_records(
 
             # after missing pages we'll continue at max_cursor+100
             cursor = (max_cursor + 100) if max_cursor >= 0 else 0
+            # Calculate existing articles count
             console.print(f"[yellow]Resuming fetch for {server} from cursor {cursor} (after max existing {max_cursor}).[/]")
 
     # If we already found a completed run (last batch < 100), skip fetching
@@ -151,7 +170,8 @@ def fetch_all_records(
             for _ in range(max_retries):
                 try:
                     r = requests.get(url, timeout=30)
-                    if getattr(r, "status_code", None) == 421:
+                    # retry on 421 (Misdirected Request) and 500 (Internal Server Error) and 503 (Service Unavailable)
+                    if getattr(r, "status_code", None) in (421, 500, 503):
                         time.sleep(wait)
                         continue
                     r.raise_for_status()
@@ -159,7 +179,8 @@ def fetch_all_records(
                     return cursor, data.get("collection", [])
                 except requests.exceptions.HTTPError as e:
                     resp = getattr(e, "response", None)
-                    if resp is not None and getattr(resp, "status_code", None) == 421:
+                    # treat 421 and 500 and 503 as transient and retry
+                    if resp is not None and getattr(resp, "status_code", None) in (421, 500, 503):
                         time.sleep(wait)
                         continue
                     raise
@@ -170,66 +191,93 @@ def fetch_all_records(
 
         next_cursor = cursor
         final_seen = False
-        with futures.ThreadPoolExecutor(max_workers=concurrency) as ex:
-            pending: dict = {}
-            # prime the executor: prefer any missing cursors in fetch_queue, otherwise use next_cursor
-            for _ in range(concurrency):
-                if fetch_queue:
-                    c = fetch_queue.popleft()
-                    pending[ex.submit(_fetch_page, c)] = c
-                else:
-                    pending[ex.submit(_fetch_page, next_cursor)] = next_cursor
-                    next_cursor += 100
+        # Initialize with existing files count for resume support
+        files_completed = len(existing_files) if existing_files else 0
+        
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            TaskProgressColumn(),
+            TextColumn("~{task.fields[articles]:,} articles done"),
+            console=console,
+        ) as progress:
+            task = progress.add_task(
+                f"[cyan]Fetching {server}...",
+                total=None,
+                articles=0
+            )
+            
+            with futures.ThreadPoolExecutor(max_workers=concurrency) as ex:
+                pending: dict = {}
+                # prime the executor: prefer any missing cursors in fetch_queue, otherwise use next_cursor
+                for _ in range(concurrency):
+                    if fetch_queue:
+                        c = fetch_queue.popleft()
+                        pending[ex.submit(_fetch_page, c)] = c
+                    else:
+                        pending[ex.submit(_fetch_page, next_cursor)] = next_cursor
+                        next_cursor += 100
 
-            while pending:
-                done, _ = futures.wait(pending.keys(), return_when=futures.FIRST_COMPLETED)
-                for fut in list(done):
-                    page_cursor = pending.pop(fut)
-                    exc = fut.exception()
-                    if exc is not None:
-                        console.print(f"[red]Error fetching page {page_cursor}: {exc}[/]")
-                        raise exc
-                    cur, collection = fut.result()
+                while pending:
+                    done, _ = futures.wait(pending.keys(), return_when=futures.FIRST_COMPLETED)
+                    for fut in list(done):
+                        page_cursor = pending.pop(fut)
+                        exc = fut.exception()
+                        if exc is not None:
+                            console.print(f"[red]Error fetching page {page_cursor}: {exc}[/]")
+                            raise exc
+                        cur, collection = fut.result()
 
-                    # normalize and write the page
-                    try:
-                        for c in collection:
-                            funder = c.get("funder")
-                            if isinstance(funder, list):
-                                c["funder"] = funder[0]['name']
+                        # Skip if collection is empty (we've gone past the end)
+                        if len(collection) == 0:
+                            console.print(f"[blue]Page {cur} is empty, skipping (end of data reached).[/]")
+                            if not final_seen:
+                                final_seen = True
+                            continue
 
-                        batch_df = pl.DataFrame(collection)
-                    except (TypeError, ValueError):
-                        collection = [dict(x) for x in collection]
+                        # normalize and write the page
+                        try:
+                            for c in collection:
+                                funder = c.get("funder")
+                                if isinstance(funder, list):
+                                    c["funder"] = funder[0]['name']
 
-                        for c in collection:
-                            funder = c.get("funder")
-                            if isinstance(funder, list):
-                                c["funder"] = funder[0]['name']
+                            batch_df = pl.DataFrame(collection)
+                        except (TypeError, ValueError):
+                            collection = [dict(x) for x in collection]
 
-                        batch_df = pl.DataFrame(collection)
+                            for c in collection:
+                                funder = c.get("funder")
+                                if isinstance(funder, list):
+                                    c["funder"] = funder[0]['name']
 
-                    if "abstract" in batch_df.columns:
-                        batch_df = batch_df.drop("abstract")
-                    if "source_server" not in batch_df.columns:
-                        batch_df = batch_df.with_columns(source_server=pl.lit(server))
+                            batch_df = pl.DataFrame(collection)
 
-                    temp_path = temp_outdir / f"{server}_{start_date}_{cur}.parquet"
-                    batch_df.write_parquet(temp_path)
+                        if "abstract" in batch_df.columns:
+                            batch_df = batch_df.drop("abstract")
+                        if "source_server" not in batch_df.columns:
+                            batch_df = batch_df.with_columns(source_server=pl.lit(server))
 
-                    if len(collection) < 100:
-                        final_seen = True
+                        temp_path = temp_outdir / f"{server}_{start_date}_{cur}.parquet"
+                        batch_df.write_parquet(temp_path)
+                        
+                        # Update progress
+                        files_completed += 1
+                        progress.update(task, advance=1, articles=files_completed * 100)
 
-                    if not final_seen:
-                        # prefer any queued missing cursors
-                        if fetch_queue:
-                            c = fetch_queue.popleft()
-                            pending[ex.submit(_fetch_page, c)] = c
-                        else:
-                            pending[ex.submit(_fetch_page, next_cursor)] = next_cursor
-                            next_cursor += 100
+                        if len(collection) < 100:
+                            final_seen = True
 
-                time.sleep(pause_s)
+                        if not final_seen:
+                            # prefer any queued missing cursors
+                            if fetch_queue:
+                                c = fetch_queue.popleft()
+                                pending[ex.submit(_fetch_page, c)] = c
+                            else:
+                                pending[ex.submit(_fetch_page, next_cursor)] = next_cursor
+                                next_cursor += 100
+
+                    time.sleep(pause_s)
     else:
         console.print(f"[blue]Skipping fetch; using existing batch files in {temp_outdir}[/]")
 
