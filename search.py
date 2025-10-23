@@ -21,7 +21,7 @@ def fetch_exact_affil(
     server: str,
     start_date: str = "2013-01-01",
     end_date: Optional[str] = None,
-    target_affil: str = "Institut pasteur",
+    target_affil: str = "Institut Pasteur",
     pause_s: float = 0.2,
 ) -> pl.DataFrame:
     """Return records from a biorxiv/medrxiv server where

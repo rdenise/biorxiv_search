@@ -2,3 +2,4 @@ requests
 polars
 rich
 rich-click
+lxml
