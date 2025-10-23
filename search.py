@@ -283,7 +283,7 @@ def fetch_exact_affil(
     # filter by affiliation case-insensitive
     target = target_affil.strip().lower()
     if "author_corresponding_institution" in combined.columns:
-        hits_df = combined.filter(pl.col("author_corresponding_institution").str.to_lowercase().eq(target))
+        hits_df = combined.filter(pl.col("author_corresponding_institution").str.to_lowercase().str.contains(target))
     else:
         hits_df = pl.DataFrame([])
 
